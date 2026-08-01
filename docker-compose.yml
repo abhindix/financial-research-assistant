@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    environment: ["LLM_BASE_URL=http://host.docker.internal:1234/v1","NEO4J_URI=bolt://neo4j:7687","REDIS_URL=redis://redis:6379/0"]
+    ports: ["8000:8000"]
+    volumes: ["./data:/app/data"]
+    depends_on: [neo4j,redis]
+  ui:
+    build: .
+    command: streamlit run ui/streamlit_app.py --server.address=0.0.0.0
+    environment: ["API_URL=http://api:8000/api/v1"]
+    ports: ["8501:8501"]
+    depends_on: [api]
+  neo4j:
+    image: neo4j:5-community
+    environment: {NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:-change-me-now}"}
+    ports: ["7474:7474","7687:7687"]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
