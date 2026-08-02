@@ -1,19 +1,21 @@
+import os
 from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
-class Settings(BaseSettings):
-    llm_base_url: str='http://localhost:1234/v1'
-    llm_api_key: str='lm-studio'
-    llm_model: str='openai/gpt-oss-20b'
-    embedding_model: str='sentence-transformers/all-MiniLM-L6-v2'
-    neo4j_uri: str='bolt://localhost:7687'
-    neo4j_user: str='neo4j'
-    neo4j_password: str='change-me-now'
-    redis_url: str='redis://localhost:6379/0'
-    human_approval_threshold: float=.55
-    # Security settings
-    cors_origins: list[str]=['*']          # Set to specific origins in production, e.g. ["https://your-domain.com"]
-    max_upload_bytes: int=50*1024*1024      # 50 MB — reject PDFs larger than this
-    metrics_token: str=''                   # Set a secret token to protect /metrics; empty = no auth
-    model_config=SettingsConfigDict(env_file='.env',extra='ignore')
+
+class Settings:
+    def __init__(self):
+        self.llm_base_url=os.getenv('LLM_BASE_URL','http://localhost:1234/v1')
+        self.llm_api_key=os.getenv('LLM_API_KEY','lm-studio')
+        self.llm_model=os.getenv('LLM_MODEL','openai/gpt-oss-20b')
+        self.embedding_model=os.getenv('EMBEDDING_MODEL','text-embedding-nomic-embed-text-v1.5')
+        self.neo4j_uri=os.getenv('NEO4J_URI','bolt://localhost:7687')
+        self.neo4j_user=os.getenv('NEO4J_USER','neo4j')
+        self.neo4j_password=os.getenv('NEO4J_PASSWORD','change-me-now')
+        self.redis_url=os.getenv('REDIS_URL','redis://localhost:6379/0')
+        self.human_approval_threshold=float(os.getenv('HUMAN_APPROVAL_THRESHOLD','.55'))
+        self.cors_origins=os.getenv('CORS_ORIGINS','*').split(',') if os.getenv('CORS_ORIGINS') else ['*']
+        self.max_upload_bytes=int(os.getenv('MAX_UPLOAD_BYTES', str(50*1024*1024)))
+        self.metrics_token=os.getenv('METRICS_TOKEN','')
+
 @lru_cache
-def settings(): return Settings()
+def settings():
+    return Settings()

@@ -7,7 +7,7 @@ from pydantic import BaseModel,Field
 from prometheus_client import make_asgi_app,generate_latest,CONTENT_TYPE_LATEST
 from app.config import settings
 from app.retrieval import retriever
-from app.services import ingest_pdf,LLM
+from app.services import ingest_pdf,LLM,memory
 from app.workflow import workflow
 
 _SAFE_FILENAME=re.compile(r'[^a-zA-Z0-9._-]')
@@ -38,8 +38,14 @@ async def documents(file:UploadFile=File(...)):
     safe_name=_sanitize(file.filename)
     with tempfile.NamedTemporaryFile(delete=False,suffix='.pdf',prefix='upload_') as f:f.write(raw);p=Path(f.name)
     try:
-        named=p.with_name(safe_name); p.rename(named); p=named; return ingest_pdf(p)
-    finally:p.unlink(missing_ok=True)
+        named=p.with_name(safe_name); p.rename(named); p=named
+        retriever.reset()
+        memory.clear()
+        result=ingest_pdf(p)
+        return result
+    finally:
+        if p.exists() and p != Path(file.filename):
+            p.unlink(missing_ok=True)
 @app.post('/api/v1/ask')
 async def ask(req:Ask):
     s=await workflow.ainvoke(req.model_dump()); return {'answer':s['answer'],'confidence':s['confidence'],'status':s['status'],'sources':[{k:v for k,v in x.items() if k!='text'} for x in s.get('sources',[])],'graph_data':s.get('graph_data',[])}
@@ -49,11 +55,14 @@ async def stream(req:Ask):
     async def gen():
         yield 'data: '+json.dumps({'type':'sources','sources':[{'title':c.title,'page':c.page,'score':s} for c,s in hits]})+'\n\n'
         try:
-            client=LLM().client; model=LLM().model
-            r=await client.chat.completions.create(model=model,messages=[{'role':'system','content':'You are a cautious financial research copilot.'},{'role':'user','content':f'Question: {req.question}\nEvidence:\n{refs}\nCite [n].'}],temperature=.1,stream=True)
-            async for ch in r:
-                token=ch.choices[0].delta.content or ''
-                if token:yield 'data: '+json.dumps({'type':'token','content':token})+'\n\n'
+            llm=LLM(); client=llm.client; model=llm.model
+            if not client:
+                yield 'data: '+json.dumps({'type':'token','content':'I could not contact the configured LLM service. The app will continue with the retrieved evidence only.'})+'\n\n'
+            else:
+                r=await client.chat.completions.create(model=model,messages=[{'role':'system','content':'You are a cautious financial research copilot.'},{'role':'user','content':f'Question: {req.question}\nEvidence:\n{refs}\nCite [n].'}],temperature=.1,stream=True)
+                async for ch in r:
+                    token=ch.choices[0].delta.content or ''
+                    if token:yield 'data: '+json.dumps({'type':'token','content':token})+'\n\n'
             yield 'data: '+json.dumps({'type':'done'})+'\n\n'
         except Exception as e:yield 'data: '+json.dumps({'type':'error','message':str(e)})+'\n\n'
     return StreamingResponse(gen(),media_type='text/event-stream')

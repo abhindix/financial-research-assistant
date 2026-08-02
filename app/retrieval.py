@@ -1,18 +1,52 @@
 import json
+import re
 from dataclasses import dataclass,asdict
 from pathlib import Path
 import numpy as np
 from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
 from app.config import settings
+
+try:
+    from sentence_transformers import SentenceTransformer as _SentenceTransformer
+except Exception:
+    _SentenceTransformer=None
+
+class _FallbackEmbeddingModel:
+    def encode(self,texts,normalize_embeddings=True):
+        if isinstance(texts,str): texts=[texts]
+        vectors=np.zeros((len(texts),384),dtype='float32')
+        for i,text in enumerate(texts):
+            tokens=re.findall(r'\w+',text.lower())
+            for token in tokens:
+                vectors[i,hash(token)%384]+=1.0
+            if normalize_embeddings and vectors[i].sum()>0:
+                vectors[i]/=np.linalg.norm(vectors[i])
+        return vectors
+
 @dataclass
 class Chunk:
     source_id:str; title:str; text:str; page:int|None=None; section:str|None=None
 class HybridRetriever:
     def __init__(self):
         self.dir=Path('data/index'); self.dir.mkdir(parents=True,exist_ok=True)
-        self.model=SentenceTransformer(settings().embedding_model)
+        self.model=self._build_model()
         self.chunks=[]; self.vectors=np.empty((0,384),dtype='float32'); self.bm25=None; self.load()
+
+    def reset(self):
+        self.chunks=[]
+        self.vectors=np.empty((0,384),dtype='float32')
+        self.bm25=None
+        for path in [self.dir/'chunks.json', self.dir/'vectors.npy']:
+            if path.exists():
+                path.unlink(missing_ok=True)
+
+    def _build_model(self):
+        if not _SentenceTransformer:
+            return _FallbackEmbeddingModel()
+        try:
+            return _SentenceTransformer(settings().embedding_model)
+        except Exception:
+            return _FallbackEmbeddingModel()
     def load(self):
         if (self.dir/'chunks.json').exists(): self.chunks=[Chunk(**x) for x in json.loads((self.dir/'chunks.json').read_text('utf-8'))]
         if (self.dir/'vectors.npy').exists(): self.vectors=np.load(self.dir/'vectors.npy')
