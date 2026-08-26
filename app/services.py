@@ -33,7 +33,7 @@ _MAX_MEMORY_TURNS = 20
 
 
 def _trim_memory(conversation_id: str) -> None:
-    """Keep only the most recent _MAX_MEMORY_TURNS message pairs."""
+    """Keep only the most recent _MAX_MEMORY_TURNS individual messages."""
     if len(memory[conversation_id]) > _MAX_MEMORY_TURNS:
         memory[conversation_id] = memory[conversation_id][-_MAX_MEMORY_TURNS:]
 
