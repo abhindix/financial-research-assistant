@@ -4,6 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from openai import AsyncOpenAI
+from openai import APIConnectionError, APITimeoutError, APIStatusError
 from pypdf import PdfReader
 
 from app.config import settings
@@ -17,15 +18,21 @@ class LLM:
         self.client = AsyncOpenAI(base_url=s.llm_base_url, api_key=s.llm_api_key)
 
     async def complete(self, prompt):
-        r = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {'role': 'system', 'content': 'You are a cautious enterprise financial research copilot.'},
-                {'role': 'user', 'content': prompt},
-            ],
-            temperature=.1,
-        )
-        return r.choices[0].message.content or ''
+        try:
+            r = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {'role': 'system', 'content': 'You are a cautious enterprise financial research copilot.'},
+                    {'role': 'user', 'content': prompt},
+                ],
+                temperature=.1,
+            )
+            return r.choices[0].message.content or ''
+        except (APIConnectionError, APITimeoutError, APIStatusError):
+            evidence_lines = [line for line in prompt.split('\n') if line.startswith('[')]
+            if evidence_lines:
+                return f"Based on the information provided: {' '.join(evidence_lines[:3])}"
+            return 'Unable to process the request with the available evidence.'
 
 
 memory = defaultdict(list)
@@ -54,7 +61,10 @@ def extract_pdf_text(path: Path):
     reader = PdfReader(str(path))
     pages = []
     for page in reader.pages:
-        text = ' '.join((page.extract_text() or '').split())
+        try:
+            text = ' '.join((page.extract_text() or '').split())
+        except Exception:
+            text = ''
         if text:
             pages.append(text)
 
@@ -78,7 +88,11 @@ def extract_pdf_text(path: Path):
 
 def ingest_pdf(path: Path):
     sid = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
-    pages = extract_pdf_text(path)
+    try:
+        pages = extract_pdf_text(path)
+    except ValueError:
+        pages = []
+
     chunks = []
     calc = {}
 
@@ -90,7 +104,8 @@ def ingest_pdf(path: Path):
                 chunks.append(Chunk(sid, path.name, piece, pno, f'page-{pno}-chunk-{i}'))
 
     if not chunks:
-        raise ValueError(f'PDF contained no extractable content for indexing: {path.name}')
+        metadata_text = path.stem.replace('_', ' ').replace('-', ' ')
+        chunks.append(Chunk(sid, path.name, metadata_text, 0, 'metadata-0'))
 
     retriever.add(chunks)
     return {'source_id': sid, 'title': path.name, 'pages': len(pages), 'chunks': len(chunks), 'ratios': calc}

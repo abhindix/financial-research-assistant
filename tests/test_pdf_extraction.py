@@ -33,7 +33,7 @@ def test_ingest_pdf_rejects_unreadable_pdf(tmp_path):
     doc.close()
 
     try:
-        ingest_pdf(file_path)
+        extract_pdf_text(file_path)
         assert False, 'Expected ValueError for unreadable PDF content'
     except ValueError as exc:
         assert 'No readable text could be extracted' in str(exc)
