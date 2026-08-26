@@ -2,6 +2,10 @@
 
 A runnable portfolio MVP featuring PDF ingestion, dense + BM25 hybrid retrieval, LangGraph orchestration, optional Neo4j graph analytics, LM Studio integration, citations, conversation memory, SSE streaming, confidence-based human review, Prometheus metrics, Docker, Kubernetes and CI.
 
+## Recent update: PDF extraction fix
+
+The application now guards against unreadable or blank PDFs by attempting extraction with both `pypdf` and `PyMuPDF`, and it fails clearly when no text can be extracted instead of silently indexing empty content.
+
 ## Architecture
 
 ```text
