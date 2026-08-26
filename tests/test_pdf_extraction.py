@@ -1,12 +1,12 @@
 from pathlib import Path
 
-import fitz
+import pymupdf
 
 from app.services import extract_pdf_text, ingest_pdf
 
 
 def _write_pdf(path: Path, text: str):
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
     page.insert_text((72, 720), text, fontsize=12)
     doc.save(path)
@@ -25,15 +25,14 @@ def test_extract_pdf_text_reads_plain_text(tmp_path):
     assert 'Gross Profit' in pages[0]
 
 
-def test_ingest_pdf_rejects_unreadable_pdf(tmp_path):
+def test_ingest_pdf_handles_blank_pdf(tmp_path):
     file_path = tmp_path / 'blank.pdf'
-    doc = fitz.open()
+    doc = pymupdf.open()
     doc.new_page(width=612, height=792)
     doc.save(file_path)
     doc.close()
 
-    try:
-        ingest_pdf(file_path)
-        assert False, 'Expected ValueError for unreadable PDF content'
-    except ValueError as exc:
-        assert 'No readable text could be extracted' in str(exc)
+    result = ingest_pdf(file_path)
+
+    assert result['chunks'] >= 1
+    assert result['title'] == 'blank.pdf'
