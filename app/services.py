@@ -31,6 +31,11 @@ class LLM:
 memory = defaultdict(list)
 
 
+def _trim_memory(conversation_id: str, max_messages: int = 20) -> None:
+    if len(memory[conversation_id]) > max_messages:
+        memory[conversation_id] = memory[conversation_id][-max_messages:]
+
+
 def ratios(text):
     def grab(label):
         m = re.search(label + r'[^$]{0,30}\$?([\d,.]+)', text, re.I)
